@@ -1,0 +1,101 @@
+(ns lounge.setup
+  (:require [lounge.ui.view  :as view]
+            [lounge.ui.card  :as ui]
+            [silicone.iron   :as iron]
+            [silicone.paper  :as paper]
+            [lounge.vault    :as vault]))
+
+(def setup-wizard
+  (let [username      (cell nil)
+        password      (cell nil)
+        confpassword  (cell nil)
+        page          (cell "welcome")
+        advsettings (cell nil)
+        keyshardnum   (cell 1)
+        keyshardreq   (cell 1)
+        submit-click! #(cond (= @page "security")
+                             (let []
+                               (if advsettings
+                                 (vault/init! @keyshardnum @keyshardreq @username @password @confpassword)
+                                 (vault/init! 1 1 @username @password @confpassword))
+                               (vault/auth! @username @password)
+                               (reset! page "summary"))
+                             (= @page "summary") (vault/status?))]
+    (ui/page-wizard {:heading "Setup"
+                     :buttons {:prevbtn   {:toggle   (cell= (and (not= page "welcome")  (not= page "summary")))}
+                               :nextbtn   {:toggle   (cell= (and (not= page "security") (not= page "summary")))
+                                           :disabled (cell= (cond (= page "admin")
+                                                                  (or (nil? username)
+                                                                      (nil? password)
+                                                                      (nil? confpassword)
+                                                                      (not= password confpassword))
+                                                                  :else false))}
+                               :submitbtn {:toggle (cell= (or   (= page "security") (= page "summary")))
+                                           :click  #(submit-click!)
+                                           :disabled (cell= (or (< keyshardnum keyshardreq) (and (< 1 keyshardnum) (not (< 1 keyshardreq)))))}}
+                     :style "width:475px;"
+                     :page page
+                     :pages {:welcome {:next "admin"}
+                             :admin   {:prev "welcome"
+                                       :next "security"}
+                             :security {:prev "admin"}}}
+                    (div {:page "welcome"}
+                         (p "Welcome to theLounge. To configure your instance please continue."))
+                    (div {:page "admin"}
+                         (p "Create the first administrator.")
+                         (paper/paper-input
+                          {:label "Username"
+                           :value username
+                           :change #(reset! username @%)
+                           :required true
+                           :auto-validate true
+                           :error-message "Please enter a username."})
+                         (paper/paper-input
+                          {:label "Password"
+                           :type "password"
+                           :value password
+                           :change #(reset! password @%)
+                           :required true
+                           :auto-validate true
+                           :error-message "Please enter a password."})
+                         (paper/paper-input
+                          {:label "Confirm Password"
+                           :type "password"
+                           :value confpassword
+                           :change #(reset! confpassword @%)
+                           :pattern password
+                           :required true
+                           :auto-validate true
+                           :error-message "Passwords do not match."}))
+                    (div {:page "security"}
+                         (p "Select a few basic security settings.")
+                         (paper/paper-toggle-button {:checked advsettings :toggles true :change #(swap! advsettings not)} "Use Advanced Settings")
+                         (div {:hidden (cell= (not advsettings))
+                               :style "margin:16px;"}
+                              (div "Vault Keyshards: " (cell= keyshardnum))
+                              (paper/paper-slider
+                               {:style "width:100%;"
+                                :snaps true
+                                :min 2
+                                :max 9
+                                :step 1
+                                :value 2
+                                :change #(reset! keyshardnum @%)
+                                })
+                              (div "Keyshards needed for Seal/Unseal of Vault: " (cell= keyshardreq))
+                              (paper/paper-slider
+                               {:style "width:100%;"
+                                :snaps true
+                                :min 2
+                                :max 9
+                                :step 1
+                                :value 2
+                                :change #(reset! keyshardreq @%)
+                                })))
+                         (div {:page "summary"}
+                              (p "These are your Keyshards! Keep them safe, you will need them!!")
+                              (loop-tpl :bindings [shard vault/keyshards]
+                                        (paper/paper-textarea {:style "width:100%;" :class [:autoresizing :textarea :input] :label "" :value shard}))))))
+
+(def view (view/view {:name "_setup"} [setup-wizard]))
+
